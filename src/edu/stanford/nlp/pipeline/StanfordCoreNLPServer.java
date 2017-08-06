@@ -21,6 +21,7 @@ import edu.stanford.nlp.util.logging.Redwood;
 
 import javax.net.ssl.*;
 import java.io.*;
+import java.lang.ref.SoftReference;
 import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -38,6 +39,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static edu.stanford.nlp.pipeline.StanfordCoreNLP.CUSTOM_ANNOTATOR_PREFIX;
 import static edu.stanford.nlp.util.logging.Redwood.Util.*;
 import static java.net.HttpURLConnection.*;
 
@@ -50,6 +52,7 @@ import static java.net.HttpURLConnection.*;
 public class StanfordCoreNLPServer implements Runnable {
 
   protected HttpServer server;
+  @SuppressWarnings("unused")
   @ArgumentParser.Option(name="server_id", gloss="a name for this server")
   protected String serverID = null; // currently not used
   @ArgumentParser.Option(name="port", gloss="The port to run the server on")
@@ -88,9 +91,9 @@ public class StanfordCoreNLPServer implements Runnable {
   private final ExecutorService serverExecutor;
   /**
    * To prevent grossly wasteful over-creation of pipeline objects, cache the last
-   * few we created, until the garbage collector decides we can kill them.
+   *  one we created.
    */
-  private final WeakHashMap<Properties, StanfordCoreNLP> pipelineCache = new WeakHashMap<>();
+  private SoftReference<Pair<String, StanfordCoreNLP>> lastPipeline = new SoftReference<>(null);
   /**
    * An executor to time out CoreNLP execution with.
    */
@@ -172,7 +175,7 @@ public class StanfordCoreNLPServer implements Runnable {
     // overwrite all default properties with provided server properties
     // for instance you might want to provide a default ner model
     if (serverPropertiesPath != null) {
-      Properties serverProperties = StringUtils.argsToProperties(new String[]{"-props", serverPropertiesPath});
+      Properties serverProperties = StringUtils.argsToProperties("-props", serverPropertiesPath);
       PropertiesUtils.overWriteProperties(this.defaultProps, serverProperties);
     }
 
@@ -303,16 +306,38 @@ public class StanfordCoreNLPServer implements Runnable {
    */
   private StanfordCoreNLP mkStanfordCoreNLP(Properties props) {
     StanfordCoreNLP impl;
-    synchronized (pipelineCache) {
-      impl = pipelineCache.get(props);
-      if (impl == null) {
-        AnnotatorPool pool = StanfordCoreNLP.constructAnnotatorPool(props, new AnnotatorImplementations());
-        impl = new StanfordCoreNLP(props, pool);
-        pipelineCache.put(props, impl);
+
+    StringBuilder sb = new StringBuilder();
+    props.stringPropertyNames().stream().filter(key -> !key.equalsIgnoreCase("date")).forEach(key -> {
+      String pvalue = props.getProperty(key);
+      sb.append(key).append(':').append(pvalue).append(';');
+    });
+    String cacheKey = sb.toString();
+
+    synchronized (this) {
+      Pair<String, StanfordCoreNLP> lastPipeline = this.lastPipeline.get();
+      if (lastPipeline != null && Objects.equals(lastPipeline.first, cacheKey)) {
+        return lastPipeline.second;
+      } else {
+        // Do some housekeeping on the global cache
+        for (Map.Entry<StanfordCoreNLP.AnnotatorSignature, Lazy<Annotator>> entry : new HashSet<>(StanfordCoreNLP.GLOBAL_ANNOTATOR_CACHE.entrySet())) {
+          if (!entry.getValue().isCache()) {
+            error("Entry in global cache is not garbage collectable!");
+            StanfordCoreNLP.GLOBAL_ANNOTATOR_CACHE.remove(entry.getKey());
+          }
+          if (entry.getValue().isCache() && entry.getValue().isGarbageCollected()) {
+            StanfordCoreNLP.GLOBAL_ANNOTATOR_CACHE.remove(entry.getKey());
+          }
+        }
+        // Create a CoreNLP
+        impl = new StanfordCoreNLP(props);
+        this.lastPipeline = new SoftReference<>(Pair.makePair(cacheKey, impl));
       }
     }
+
     return impl;
   }
+
 
   /**
    * A helper function to respond to a request with an error.
@@ -409,7 +434,7 @@ public class StanfordCoreNLPServer implements Runnable {
    * The canonical use-case for this is for Kubernetes readiness checks.
    */
   protected static class ReadyHandler implements HttpHandler {
-    /** If true, the server is runnning and ready for requets. */
+    /** If true, the server is running and ready for requests. */
     public final AtomicBoolean serverReady;
     /** The creation time of this handler. This is used to tell the caller how long we've been waiting for. */
     public final long startTime;
@@ -594,6 +619,13 @@ public class StanfordCoreNLPServer implements Runnable {
           // Handle direct browser connections (i.e., not a POST request).
           homepage.handle(httpExchange);
           return;
+        } else if (httpExchange.getRequestMethod().equals("HEAD")) {
+          // attempt to handle issue #368; see http://bugs.java.com/bugdatabase/view_bug.do?bug_id=6886723
+          httpExchange.getRequestBody().close();
+          httpExchange.getResponseHeaders().add("Transfer-encoding", "chunked");
+          httpExchange.sendResponseHeaders(200, -1);
+          httpExchange.close();
+          return;
         } else {
           // Handle API request
           if (authenticator != null && !authenticator.test(props)) {
@@ -727,13 +759,13 @@ public class StanfordCoreNLPServer implements Runnable {
       if (language != null && !"default".equals(language)) {
         String languagePropertiesFile = LanguageInfo.getLanguagePropertiesFile(language);
         if (languagePropertiesFile != null) {
-          Properties languageSpecificProperties = new Properties();
           try {
+            Properties languageSpecificProperties = new Properties();
             languageSpecificProperties.load(
                     IOUtils.getInputStreamFromURLOrClasspathOrFileSystem(languagePropertiesFile));
             PropertiesUtils.overWriteProperties(props,languageSpecificProperties);
           } catch (IOException e) {
-            err("Failure to load language specific properties.");
+            err("Failure to load language specific properties: " + languagePropertiesFile + " for " + language);
           }
         } else {
           try {
@@ -754,14 +786,16 @@ public class StanfordCoreNLPServer implements Runnable {
           props.remove("mention.type");
         }
       }
-
       // (add new properties on top of the default properties)
       urlProperties.entrySet()
           .forEach(entry -> props.setProperty(entry.getKey(), entry.getValue()));
 
+
+
       // Get the annotators
       String annotators = props.getProperty("annotators");
-      if (PropertiesUtils.getBool(props, "enforceRequirements", true)) {
+      // If the properties contains a custom annotator, then do not enforceRequirements.
+      if (!PropertiesUtils.hasPropertyPrefix(props, CUSTOM_ANNOTATOR_PREFIX) && PropertiesUtils.getBool(props, "enforceRequirements", true)) {
         annotators = StanfordCoreNLP.ensurePrerequisiteAnnotators(props.getProperty("annotators").split("[, \t]+"), props);
       }
 
@@ -1232,7 +1266,7 @@ public class StanfordCoreNLPServer implements Runnable {
    * @param context The context to enable authentication for.
    * @param credentials The optional credentials to enforce. This is a (key,value) pair
    */
-  private void withAuth(HttpContext context, Optional<Pair<String,String>> credentials) {
+  private static void withAuth(HttpContext context, Optional<Pair<String,String>> credentials) {
     credentials.ifPresent(c -> context.setAuthenticator(new BasicAuthenticator("corenlp") {
       @Override
       public boolean checkCredentials(String user, String pwd) {
@@ -1325,7 +1359,7 @@ public class StanfordCoreNLPServer implements Runnable {
     }
 
     // Pre-load the models
-    if (StanfordCoreNLPServer.preloadedAnnotators != null && !"".equals(StanfordCoreNLPServer.preloadedAnnotators.trim())) {
+    if (StanfordCoreNLPServer.preloadedAnnotators != null && ! StanfordCoreNLPServer.preloadedAnnotators.trim().isEmpty()) {
       Properties props = new Properties();
       server.defaultProps.entrySet().forEach(entry -> props.setProperty(entry.getKey().toString(), entry.getValue().toString()));
       props.setProperty("annotators", StanfordCoreNLPServer.preloadedAnnotators);

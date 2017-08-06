@@ -280,6 +280,8 @@ public abstract class WebServiceAnnotator implements Annotator {
             this.server.get().ready = true;
           }
         }
+      } else if (!ready(false)) { // The server is not ready
+        throw new IOException("Server is not ready and can not start it!");
       }
     }
     log.info("Got readiness from server for " + this);
@@ -326,7 +328,9 @@ public abstract class WebServiceAnnotator implements Annotator {
   private void annotate(Annotation annotation, int tries) {
     try {
       // 1. Ensure that we have a server to annotate against
-      ensureServer();
+      synchronized(this) {
+        ensureServer();
+      }
 
       try {
 

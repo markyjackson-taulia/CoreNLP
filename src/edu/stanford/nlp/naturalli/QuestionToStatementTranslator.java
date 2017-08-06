@@ -1,10 +1,17 @@
 package edu.stanford.nlp.naturalli;
 
+import edu.stanford.nlp.io.IOUtils;
 import edu.stanford.nlp.ling.CoreAnnotation;
+import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.ling.tokensregex.TokenSequenceMatcher;
 import edu.stanford.nlp.ling.tokensregex.TokenSequencePattern;
+import edu.stanford.nlp.pipeline.Annotation;
+import edu.stanford.nlp.pipeline.StanfordCoreNLP;
+import edu.stanford.nlp.util.PropertiesUtils;
+import edu.stanford.nlp.util.StringUtils;
 
+import java.io.IOException;
 import java.util.*;
 
 /**
@@ -41,6 +48,8 @@ public class QuestionToStatementTranslator {
     setIndex(-1);
     setBeginPosition(-1);
     setEndPosition(-1);
+    setBefore(" ");
+    setAfter(" ");
     set(UnknownTokenMarker.class, true);
   }};
 
@@ -54,6 +63,8 @@ public class QuestionToStatementTranslator {
     setIndex(-1);
     setBeginPosition(-1);
     setEndPosition(-1);
+    setBefore(" ");
+    setAfter(" ");
     set(UnknownTokenMarker.class, true);
   }};
 
@@ -80,19 +91,39 @@ public class QuestionToStatementTranslator {
     setIndex(-1);
     setBeginPosition(-1);
     setEndPosition(-1);
+    setBefore(" ");
+    setAfter(" ");
     set(UnknownTokenMarker.class, true);
   }};
 
-  /** The word "," as a CoreLabel */
-  private final CoreLabel WORD_COMMA = new CoreLabel(){{
-    setWord(",");
-    setValue(",");
-    setLemma(",");
-    setTag(",");
+  /** The missing word marker typed as a time. */
+  private final CoreLabel WORD_ADJECTIVE = new CoreLabel(){{
+    setWord("adjective");
+    setValue("adjective");
+    setLemma("adjective");
+    setTag("JJ");
     setNER("O");
     setIndex(-1);
     setBeginPosition(-1);
     setEndPosition(-1);
+    setBefore(" ");
+    setAfter(" ");
+    set(UnknownTokenMarker.class, true);
+  }};
+
+  /** The missing word marker typed as a time. */
+  private final CoreLabel WORD_WAY = new CoreLabel(){{
+    setWord("way");
+    setValue("way");
+    setLemma("way");
+    setTag("RB");
+    setNER("O");
+    setIndex(-1);
+    setBeginPosition(-1);
+    setEndPosition(-1);
+    setBefore(" ");
+    setAfter(" ");
+    set(UnknownTokenMarker.class, true);
   }};
 
   /** The word "from" as a CoreLabel */
@@ -105,6 +136,8 @@ public class QuestionToStatementTranslator {
     setIndex(-1);
     setBeginPosition(-1);
     setEndPosition(-1);
+    setBefore(" ");
+    setAfter(" ");
   }};
 
   /** The word "at" as a CoreLabel */
@@ -117,6 +150,8 @@ public class QuestionToStatementTranslator {
     setIndex(-1);
     setBeginPosition(-1);
     setEndPosition(-1);
+    setBefore(" ");
+    setAfter(" ");
   }};
 
   /** The word "in" as a CoreLabel */
@@ -129,6 +164,22 @@ public class QuestionToStatementTranslator {
     setIndex(-1);
     setBeginPosition(-1);
     setEndPosition(-1);
+    setBefore(" ");
+    setAfter(" ");
+  }};
+
+  /** The word "to" as a CoreLabel */
+  private final CoreLabel WORD_TO = new CoreLabel(){{
+    setWord("to");
+    setValue("to");
+    setLemma("to");
+    setTag("TO");
+    setNER("O");
+    setIndex(-1);
+    setBeginPosition(-1);
+    setEndPosition(-1);
+    setBefore(" ");
+    setAfter(" ");
   }};
 
   private final Set<String> fromNotAtDict = Collections.unmodifiableSet(new HashSet<String>() {{
@@ -161,37 +212,42 @@ public class QuestionToStatementTranslator {
    */
   private List<CoreLabel> processWhatIs(TokenSequenceMatcher matcher) {
     // Grab the body of the sentence
-    List<CoreLabel> body = (List<CoreLabel>) matcher.groupNodes("$statement_body");
+    LinkedList<CoreLabel> body = new LinkedList<>((List<CoreLabel>) matcher.groupNodes("$statement_body"));
 
     // Add the "be" token
-    // [Gabor]: This is black magic -- if the "be" got misplaced, God help us all.
-    // [Gabor]: Mostly you. You'll need most of the help.
+    // [Gabor]: This is basically the most principled code I've ever written.
+    // [Gabor]: If the "be" gets misplaced, God help us all.
+    // [Gabor]: Mostly you. I'm graduated and gone, so you'll need most of the help.
     List<CoreLabel> be = (List<CoreLabel>) matcher.groupNodes("$be");
     List<CoreLabel> suffix = (List<CoreLabel>) matcher.groupNodes("$suffix");
     boolean addedBe = false;
     boolean addedSuffix = false;
-    for (int i = 1; i < body.size(); ++i) {
-      CoreLabel tokI = body.get(i);
-      if (tokI.tag() != null &&
-          (tokI.tag().startsWith("V") ||
-              (tokI.tag().startsWith("J") && suffix != null) ||
-              (tokI.tag().startsWith("D") && suffix != null) ||
-              (tokI.tag().startsWith("R") && suffix != null) )) {
-        body.add(i, be.get(0)); i += 1;
-        if (suffix != null) {
-          while (i < body.size() && body.get(i).tag() != null &&
-              (body.get(i).tag().startsWith("J") || body.get(i).tag().startsWith("V") || body.get(i).tag().startsWith("R") ||
-               body.get(i).tag().startsWith("N") || body.get(i).tag().startsWith("D")) &&
-              !body.get(i).tag().equals("VBG")) {
-            i += 1;
+    if (body.size() > 1 && !"PRP".equals(body.get(0).tag())) {
+      for (int i = 2; i < body.size(); ++i) {
+        CoreLabel tokI = body.get(i);
+        if (tokI.tag() != null &&
+            ((tokI.tag().startsWith("V") && !tokI.tag().equals("VBD") && !"be".equals(body.get(i - 1).lemma())) ||
+                (tokI.tag().startsWith("J") && suffix != null) ||
+                (tokI.tag().startsWith("D") && suffix != null) ||
+                (tokI.tag().startsWith("R") && suffix != null))) {
+          body.add(i, be.get(0));
+          i += 1;
+          if (suffix != null) {
+            while (i < body.size() && body.get(i).tag() != null &&
+                (body.get(i).tag().startsWith("J") || body.get(i).tag().startsWith("V") || body.get(i).tag().startsWith("R") ||
+                    body.get(i).tag().startsWith("N") || body.get(i).tag().startsWith("D")) &&
+                !body.get(i).tag().equals("VBG")) {
+              i += 1;
+            }
+            body.add(i, suffix.get(0));
+            addedSuffix = true;
           }
-          body.add(i, suffix.get(0));
-          addedSuffix = true;
+          addedBe = true;
+          break;
         }
-        addedBe = true;
-        break;
       }
     }
+
     // Tweak to handle dropped prepositions
     List<CoreLabel> prepNum = (List<CoreLabel>) matcher.groupNodes("$prep_num");
     if (prepNum != null) {
@@ -200,11 +256,20 @@ public class QuestionToStatementTranslator {
       body.add(prepNum.get(1));
     }
     // Add the "be" and suffix
-    if (!addedBe) {
-      body.addAll(be);
-    }
     if (!addedSuffix && suffix != null) {
       body.addAll(suffix);
+    }
+    if (!addedBe) {
+      if (body.size() > 1 && "PRP".equals(body.get(0).tag())) {
+        body.add(1, be.get(0));
+      } else {
+        body.addAll(be);
+      }
+    }
+
+    // Drop a final 'do'
+    if (body.size() > 1 && "do".equals(body.get(body.size() - 1).word())) {
+      body = new LinkedList<>(body.subList(0, body.size() - 1));
     }
 
 
@@ -223,7 +288,25 @@ public class QuestionToStatementTranslator {
       if (i < body.size() - 1 && body.get(i).tag() != null && body.get(i).tag().startsWith("IN")) {
         body.add(i, WORD_MISSING);
       } else {
-        body.add(WORD_MISSING);
+        if (body.size() >= 2 &&
+            body.get(body.size() - 2).tag() != null &&
+            body.get(body.size() - 2).tag().startsWith("N") &&
+            !body.get(body.size() - 1).tag().equals("IN")) {
+          // This is a bit of a giant hack. But:
+          // 1. Add 'thing is' to the beginning of the sentence
+          // 2. remove the 'be' we added to the end of the sentence above
+          if (!addedBe) {
+            Collections.reverse(be);
+            be.forEach(body::addFirst);
+          }
+          body.addFirst(WORD_MISSING);
+          Iterator<CoreLabel> beIter = be.iterator();
+          if (beIter.hasNext() && body.getLast() == beIter.next()) {
+            body.removeLast();
+          }
+        } else {
+          body.addLast(WORD_MISSING);
+        }
       }
     } else {
       // (case: typed)
@@ -231,6 +314,21 @@ public class QuestionToStatementTranslator {
         obj.set(UnknownTokenMarker.class, true);
       }
       body.addAll(objType);
+    }
+
+    // Swap determiner + be -> be determiner
+    for (int k = 1; k < body.size(); ++k) {
+      if ("DT".equals(body.get(k - 1).tag()) && "be".equals(body.get(k).lemma())) {
+        Collections.swap(body, k - 1, k);
+      }
+    }
+    // Swap IN + be -> be IN
+    if (body.stream().noneMatch(x -> x.tag() != null && x.tag().startsWith("V") && (be.isEmpty() || x != be.get(0)))) {
+      for (int k = 1; k < body.size(); ++k) {
+        if ("IN".equals(body.get(k - 1).tag()) && "be".equals(body.get(k).lemma())) {
+          Collections.swap(body, k - 1, k);
+        }
+      }
     }
 
     // Return
@@ -269,12 +367,12 @@ public class QuestionToStatementTranslator {
 
   /**
    * The pattern for "what/which NN have ..." sentences.
-   * @see edu.stanford.nlp.naturalli.QuestionToStatementTranslator#processWhNNHave(edu.stanford.nlp.ling.tokensregex.TokenSequenceMatcher)
+   * @see edu.stanford.nlp.naturalli.QuestionToStatementTranslator#processWhNNHaveIs(edu.stanford.nlp.ling.tokensregex.TokenSequenceMatcher)
    */
   private final TokenSequencePattern triggerWhNNHave = TokenSequencePattern.compile(
       "[{lemma:/what|which/; tag:/W.*/}] " +
           "(?$answer_type [!{tag:/V.*/}]+) " +
-          "(?$have [{lemma:have} | {lemma:do}] ) " +
+          "(?$have [{lemma:have} | {lemma:do} | {lemma:be}] ) " +
           "(?$pre_verb [!{tag:/V.*/}]+ ) " +
           "(?$verb [{tag:/V.*/}] [{tag:IN}]? ) " +
           "(?$post_verb []+ )? " +
@@ -289,14 +387,15 @@ public class QuestionToStatementTranslator {
    *
    * @see edu.stanford.nlp.naturalli.QuestionToStatementTranslator#triggerWhNNHave
    */
-  private List<CoreLabel> processWhNNHave(TokenSequenceMatcher matcher) {
+  private List<CoreLabel> processWhNNHaveIs(TokenSequenceMatcher matcher) {
     List<CoreLabel> sentence = new ArrayList<>();
     // Add prefix
     sentence.addAll((Collection<CoreLabel>) matcher.groupNodes("$pre_verb"));
 
     // Add have/do
     List<CoreLabel> have = (List<CoreLabel>) matcher.groupNodes("$have");
-    if (have != null && have.size() > 0 && have.get(0).lemma() != null && have.get(0).lemma().equals("have")) {
+    if (have != null && have.size() > 0 && have.get(0).lemma() != null &&
+        (have.get(0).lemma().equalsIgnoreCase("have") || have.get(0).lemma().equalsIgnoreCase("be"))) {
       sentence.addAll((Collection<CoreLabel>) matcher.groupNodes("$have"));
     }
 
@@ -418,7 +517,7 @@ public class QuestionToStatementTranslator {
 
   /**
    * The pattern for "where do..."  sentences.
-   * @see edu.stanford.nlp.naturalli.QuestionToStatementTranslator#processWhereDo(edu.stanford.nlp.ling.tokensregex.TokenSequenceMatcher)
+   * @see edu.stanford.nlp.naturalli.QuestionToStatementTranslator#processWhereDo(edu.stanford.nlp.ling.tokensregex.TokenSequenceMatcher, List)
    */
   private final TokenSequencePattern triggerWhereDo = TokenSequencePattern.compile(
       "[{lemma:where; tag:/W.*/}] " +
@@ -433,12 +532,13 @@ public class QuestionToStatementTranslator {
    * Process sentences matching the "where do ..." pattern.
    *
    * @param matcher The matcher that matched the pattern.
+   * @param question The original question we asked
    *
    * @return The converted statement.
    *
    * @see edu.stanford.nlp.naturalli.QuestionToStatementTranslator#triggerWhereDo
    */
-  private List<CoreLabel> processWhereDo(TokenSequenceMatcher matcher) {
+  private List<CoreLabel> processWhereDo(TokenSequenceMatcher matcher, List<CoreLabel> question) {
     // Get the "at" preposition and the "location" missing marker to use
     List<CoreLabel> specloc = (List<CoreLabel>) matcher.groupNodes("$loc");
     CoreLabel wordAt = WORD_AT;
@@ -446,6 +546,10 @@ public class QuestionToStatementTranslator {
     if (specloc != null && fromNotAtDict.contains(specloc.get(0).word())) {
       wordAt = WORD_FROM;
       missing = WORD_MISSING;
+    }
+    String questionLemmas = " " + StringUtils.join(question.stream().map(CoreLabel::lemma), " ") + " ";
+    if (questionLemmas.contains(" go ") && !questionLemmas.contains(" go to ")) {
+      wordAt = WORD_TO;
     }
 
     // Grab the prefix of the sentence
@@ -472,10 +576,10 @@ public class QuestionToStatementTranslator {
     sentence.add(missing);
 
     // Add an optional specifier location
-    if (specloc != null && at != null) {
-      sentence.add(WORD_COMMA);
-      sentence.addAll(specloc);
-    }
+//    if (specloc != null && at != null) {
+//      sentence.add(WORD_COMMA);
+//      sentence.addAll(specloc);
+//    }
 
     // Return
     return sentence;
@@ -709,7 +813,7 @@ public class QuestionToStatementTranslator {
   }
 
   /**
-   * The pattern for "where is..."  sentences.
+   * The pattern for "what do..."  sentences.
    * @see edu.stanford.nlp.naturalli.QuestionToStatementTranslator#processWhatDo(edu.stanford.nlp.ling.tokensregex.TokenSequenceMatcher)
    */
   private final TokenSequencePattern triggerWhatDo = TokenSequencePattern.compile(
@@ -779,6 +883,7 @@ public class QuestionToStatementTranslator {
     // Return
     return sentence;
   }
+
 
   /**
    * The pattern for "when do..."  sentences.
@@ -870,6 +975,199 @@ public class QuestionToStatementTranslator {
     return sentence;
   }
 
+
+  /**
+   * The pattern for "when do..."  sentences.
+   * @see edu.stanford.nlp.naturalli.QuestionToStatementTranslator#processHow(edu.stanford.nlp.ling.tokensregex.TokenSequenceMatcher)
+   */
+  private final TokenSequencePattern triggerHow = TokenSequencePattern.compile(
+      "[{lemma:how; tag:/W.*/}] " +
+          "((?$do [ {lemma:/do/}]) | (?$jj [ {pos:JJ} ]) (?$be [ {lemma:be} ])) " +
+          "(?$statement_body []+?) " +
+          "(?$punct [word:/[?\\.!]/])" );
+
+  /**
+   * Process sentences matching 'how...'
+   *
+   * @param matcher The matcher that matched the pattern.
+   *
+   * @return The converted statement.
+   *
+   * @see edu.stanford.nlp.naturalli.QuestionToStatementTranslator#triggerHow
+   */
+  private List<CoreLabel> processHow(TokenSequenceMatcher matcher) {
+    // Grab the meat of the statement
+    List<CoreLabel> sentence = (List<CoreLabel>) matcher.groupNodes("$statement_body");
+
+    // Add an optional 'be'
+    List<CoreLabel> wordBe = (List<CoreLabel>) matcher.groupNodes("$be");
+    if (wordBe != null) {
+      sentence.addAll(wordBe);
+      sentence.add(WORD_ADJECTIVE);
+    } else {
+      sentence.add(WORD_WAY);
+    }
+
+    // Return
+    return sentence;
+  }
+
+
+  /**
+   * Post-process a statement, e.g., replacing 'I' with 'you', capitalizing the
+   * first letter (and not capitalizing the other letters), etc.
+   *
+   * @param question The original question that we converted to a statement.
+   * @param statement The statement to post-process.
+   *
+   * @return The post-processed utterance.
+   */
+  private List<List<CoreLabel>> postProcess(List<CoreLabel> question, List<CoreLabel> statement) {
+    // 1. Replace 'i' with 'you', etc.
+    for (CoreLabel token : statement) {
+      String originalText = token.originalText();
+      if (originalText == null || "".equals(originalText)) {
+        originalText = token.word();
+      }
+      switch (originalText.toLowerCase()) {
+        case "i":
+          token.set(CoreAnnotations.StatementTextAnnotation.class, "you");
+          break;
+        case "you":
+          token.set(CoreAnnotations.StatementTextAnnotation.class, "i");
+          break;
+        case "my":
+          token.set(CoreAnnotations.StatementTextAnnotation.class, "your");
+          break;
+        case "your":
+          token.set(CoreAnnotations.StatementTextAnnotation.class, "my");
+          break;
+        default:
+          token.set(CoreAnnotations.StatementTextAnnotation.class, originalText);
+          break;
+      }
+    }
+
+    // 2. Property upper-case the sentence
+    for (int i = 0; i < statement.size(); ++i) {
+      CoreLabel token = statement.get(i);
+      String originalText = token.get(CoreAnnotations.StatementTextAnnotation.class);
+      String uppercase = originalText.length() == 0
+              ? originalText
+              : Character.toUpperCase(originalText.charAt(0)) + originalText.substring(1);
+      if (i == 0) {
+        token.set(CoreAnnotations.StatementTextAnnotation.class, uppercase);
+      } else if (Optional.ofNullable(token.tag()).map(x -> x.startsWith("NNP")).orElse(false)) {
+        token.set(CoreAnnotations.StatementTextAnnotation.class, uppercase);
+      } else {
+        switch (originalText.toLowerCase()) {
+          case "i":
+            token.set(CoreAnnotations.StatementTextAnnotation.class, uppercase);
+            break;
+          default:
+            token.set(CoreAnnotations.StatementTextAnnotation.class, originalText.toLowerCase());
+            break;
+        }
+      }
+    }
+
+    // 3. Fix the tense of the question
+    // 3.1. Get tense + participality(sp?)
+    boolean past = false;
+    boolean participle = false;
+    TENSE_LOOP: for (CoreLabel token : question) {
+      switch (Optional.ofNullable(token.lemma()).orElse(token.word()).toLowerCase()) {
+        case "do":
+          switch (token.tag()) {
+            case "VBG":
+              participle = true;
+            case "VB":
+              past = false;
+              break TENSE_LOOP;
+            case "VBN":
+              participle = true;
+            case "VBD":
+              past = true;
+              break TENSE_LOOP;
+          }
+          break;
+      }
+    }
+    // 3.2. Get plurality
+    boolean plural = false;
+    PLURALITY_LOOP: for (CoreLabel token : statement) {
+      switch (Optional.ofNullable(token.tag()).orElse("")) {
+        case "NN":
+        case "NNP":
+          plural = false;
+          break PLURALITY_LOOP;
+        case "NNS":
+        case "NNPS":
+          plural = true;
+          break PLURALITY_LOOP;
+      }
+    }
+    // 3.3. Get person
+    int person = 3;  // 1st, 2nd, or 3rd
+    PERSON_LOOP: for (CoreLabel token : statement) {
+      if (Optional.ofNullable(token.tag()).map(x -> x.startsWith("N")).orElse(false)) {
+        break;
+      }
+      switch (token.get(CoreAnnotations.StatementTextAnnotation.class).toLowerCase()) {
+        case "us":
+          plural = true;
+          person = 1;
+          break PERSON_LOOP;
+        case "i":
+        case "me":
+        case "mine":
+        case "my":
+          plural = false;
+          person = 1;
+          break PERSON_LOOP;
+        case "you":
+          plural = false;
+          person = 2;
+          break PERSON_LOOP;
+        case "they":
+        case "them":
+          plural = true;
+          person = 2;
+          break PERSON_LOOP;
+        case "he":
+        case "she":
+        case "him":
+        case "her":
+        case "it":
+          plural = false;
+          person = 3;
+          break PERSON_LOOP;
+      }
+    }
+    // 3.4. Conjugate the verb
+    VerbTense tense = VerbTense.of(past, plural, participle, person);
+    boolean foundVerb = false;
+    for (CoreLabel token : statement) {
+      if (Optional.ofNullable(token.tag()).map(x -> x.startsWith("V") && !x.equals("VBG") && !"be".equals(token.word())).orElse(false)) {
+        foundVerb = true;
+        token.set(CoreAnnotations.StatementTextAnnotation.class,
+            tense.conjugateEnglish(token.get(CoreAnnotations.StatementTextAnnotation.class), false));
+      }
+    }
+    if (!foundVerb) {
+      for (CoreLabel token : statement) {
+        if (Optional.ofNullable(token.tag()).map("NN"::equals).orElse(false)) {
+          token.set(CoreAnnotations.StatementTextAnnotation.class,
+              tense.conjugateEnglish(token.get(CoreAnnotations.StatementTextAnnotation.class), false));
+        }
+      }
+    }
+
+    // Return
+    return Collections.singletonList(statement);
+  }
+
+
   /**
    * Convert a question to a statement, if possible.
    * <ul>
@@ -883,32 +1181,50 @@ public class QuestionToStatementTranslator {
   public List<List<CoreLabel>> toStatement(List<CoreLabel> question) {
     TokenSequenceMatcher matcher;
     if ((matcher = triggerWhatIsThere.matcher(question)).matches()) {  // must come before triggerWhatIs
-      return Collections.singletonList(processWhatIsThere(matcher));
+      return postProcess(question, processWhatIsThere(matcher));
     } else if ((matcher = triggerWhNNIs.matcher(question)).matches()) {  // must come before triggerWhatIs
-      return Collections.singletonList(processWhNNIs(matcher));
+      return postProcess(question, processWhNNIs(matcher));
     } else if ((matcher = triggerWhNNHave.matcher(question)).matches()) {  // must come before triggerWhatHave
-      return Collections.singletonList(processWhNNHave(matcher));
+      return postProcess(question, processWhNNHaveIs(matcher));
     } else if ((matcher = triggerWhNNHaveNN.matcher(question)).matches()) {  // must come before triggerWhatHave
-      return Collections.singletonList(processWhNNHaveNN(matcher));
+      return postProcess(question, processWhNNHaveNN(matcher));
     } else if ((matcher = triggerWhatIs.matcher(question)).matches()) {
-      return Collections.singletonList(processWhatIs(matcher));
+      return postProcess(question, processWhatIs(matcher));
     } else if ((matcher = triggerWhatHave.matcher(question)).matches()) {
-      return Collections.singletonList(processWhatHave(matcher));
+      return postProcess(question, processWhatHave(matcher));
     } else if ((matcher = triggerWhereDo.matcher(question)).matches()) {
-      return Collections.singletonList(processWhereDo(matcher));
+      return postProcess(question, processWhereDo(matcher, question));
     } else if ((matcher = triggerWhereIs.matcher(question)).matches()) {
-      return Collections.singletonList(processWhereIs(matcher));
+      return postProcess(question, processWhereIs(matcher));
     } else if ((matcher = triggerWhoIs.matcher(question)).matches()) {
-      return Collections.singletonList(processWhoIs(matcher));
+      return postProcess(question, processWhoIs(matcher));
     } else if ((matcher = triggerWhoDid.matcher(question)).matches()) {
-      return Collections.singletonList(processWhoDid(matcher));
+      return postProcess(question, processWhoDid(matcher));
     } else if ((matcher = triggerWhatDo.matcher(question)).matches()) {
-      return Collections.singletonList(processWhatDo(matcher));
+      return postProcess(question, processWhatDo(matcher));
     } else if ((matcher = triggerWhenDo.matcher(question)).matches()) {
-      return Collections.singletonList(processWhenDo(matcher));
+      return postProcess(question, processWhenDo(matcher));
+    } else if ((matcher = triggerHow.matcher(question)).matches()) {
+      return postProcess(question, processHow(matcher));
     } else {
       return Collections.emptyList();
     }
+  }
+
+
+  public static void main(String[] args) throws IOException {
+    StanfordCoreNLP pipeline = new StanfordCoreNLP(PropertiesUtils.asProperties("annotators", "tokenize,ssplit,pos,lemma"));
+    QuestionToStatementTranslator translator = new QuestionToStatementTranslator();
+
+    IOUtils.console("question> ", question -> {
+      Annotation ann = new Annotation(question);
+      pipeline.annotate(ann);
+      List<CoreLabel> tokens = ann.get(CoreAnnotations.TokensAnnotation.class);
+      List<List<CoreLabel>> statements = translator.toStatement(tokens);
+      for (List<CoreLabel> statement : statements) {
+        System.out.println("  -> " + StringUtils.join(statement.stream().map(CoreLabel::word), " "));
+      }
+    });
   }
 
 }

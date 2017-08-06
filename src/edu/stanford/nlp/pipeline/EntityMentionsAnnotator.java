@@ -11,6 +11,8 @@ import edu.stanford.nlp.util.logging.Redwood;
 import java.util.*;
 import java.util.function.Function;
 
+import static edu.stanford.nlp.util.logging.Redwood.Util.logf;
+
 /**
  * Annotator that marks entity mentions in a document.
  * Entity mentions are:
@@ -105,6 +107,18 @@ public class EntityMentionsAnnotator implements Annotator {
     }
   }
 
+  private List<CoreLabel> tokensForCharacters(List<CoreLabel> tokens, int charBegin, int charEnd) {
+    assert charBegin >= 0;
+    List<CoreLabel> segment = Generics.newArrayList();
+    for(CoreLabel token: tokens) {
+      if (token.endPosition() < charBegin || token.beginPosition() >= charEnd) {
+        continue;
+      }
+      segment.add(token);
+    }
+    return segment;
+  }
+
   private final Function<Pair<CoreLabel,CoreLabel>, Boolean> IS_TOKENS_COMPATIBLE = in -> {
     // First argument is the current token
     CoreLabel cur = in.first;
@@ -141,9 +155,22 @@ public class EntityMentionsAnnotator implements Annotator {
     return true;
   };
 
+  private Optional<CoreMap> overlapsWithMention(CoreMap needle, List<CoreMap> haystack) {
+    List<CoreLabel> tokens = needle.get(CoreAnnotations.TokensAnnotation.class);
+    int charBegin = tokens.get(0).beginPosition();
+    int charEnd = tokens.get(tokens.size()-1).endPosition();
+
+    return (haystack.stream().filter(mention_ -> {
+      List<CoreLabel> tokens_ = mention_.get(CoreAnnotations.TokensAnnotation.class);
+      int charBegin_ = tokens_.get(0).beginPosition();
+      int charEnd_ = tokens_.get(tokens_.size()-1).endPosition();
+      // Check overlap
+      return !(charBegin_ > charEnd || charEnd_ < charBegin);
+    }).findFirst());
+  }
+
   @Override
   public void annotate(Annotation annotation) {
-
     List<CoreMap> allMentions = new ArrayList<>();
     List<CoreMap> sentences = annotation.get(CoreAnnotations.SentencesAnnotation.class);
 
@@ -200,6 +227,76 @@ public class EntityMentionsAnnotator implements Annotator {
       if (mentions != null) {
         allMentions.addAll(mentions);
       }
+
+      // And finally any Timex annotations (from e.g. HeidelTime).
+      List<CoreMap> timexes = sentence.get(TimeAnnotations.TimexAnnotations.class);
+      if (timexes != null) {
+        List<CoreMap> timexMentions = new ArrayList<>();
+
+        for (CoreMap cmap : timexes) {
+          // Get character information.
+          int charBegin = cmap.get(CoreAnnotations.CharacterOffsetBeginAnnotation.class);
+          int charEnd = cmap.get(CoreAnnotations.CharacterOffsetEndAnnotation.class);
+          Timex timex = cmap.get(TimeAnnotations.TimexAnnotation.class);
+          List<CoreLabel> timexTokens = cmap.get(CoreAnnotations.TokensAnnotation.class);
+          String type = "DATE";
+
+          if (timexTokens.size() == 0) continue;
+
+          int tokenBegin = timexTokens.get(0).index();
+          int tokenEnd = timexTokens.get(timexTokens.size()-1).index();
+
+          // Create a mention from this data.
+          ArrayCoreMap mention = new ArrayCoreMap();
+          // Text
+          mention.set(CoreAnnotations.TextAnnotation.class, timex.text());
+          // Character offset
+          mention.set(CoreAnnotations.CharacterOffsetBeginAnnotation.class, charBegin);
+          mention.set(CoreAnnotations.CharacterOffsetEndAnnotation.class, charEnd);
+          // Tokens
+          mention.set(CoreAnnotations.TokensAnnotation.class, timexTokens);
+          // TokenBegin, End
+          mention.set(CoreAnnotations.TokenBeginAnnotation.class, tokenBegin);
+          mention.set(CoreAnnotations.TokenEndAnnotation.class, tokenEnd);
+          // SentenceIndex
+          mention.set(CoreAnnotations.SentenceIndexAnnotation.class, sentence.get(CoreAnnotations.SentenceIndexAnnotation.class));
+          // NamedEntityTag
+          mention.set(CoreAnnotations.NamedEntityTagAnnotation.class, type);
+
+          // Run mention postprocessing.
+          mention.set(nerNormalizedCoreAnnotationClass, timex.value());
+          mention.set(CoreAnnotations.EntityTypeAnnotation.class, type);
+          // set sentence index annotation for mention
+          mention.set(CoreAnnotations.SentenceIndexAnnotation.class, sentenceIndex);
+          mention.set(TimeAnnotations.TimexAnnotation.class, timex);
+
+          Optional<CoreMap> existingMention = overlapsWithMention(mention, timexMentions);
+          if (existingMention.isPresent()) {
+            logf("WARNING: Timex mention %s collides with existing mention %s; skipping.", mention, existingMention.get());
+          } else {
+            timexMentions.add(mention);
+          }
+        }
+
+        if (sentence.get(mentionsCoreAnnotationClass) == null) {
+          sentence.set(mentionsCoreAnnotationClass, new ArrayList<>());
+        } else if (timexMentions.size() > 0) {
+          // Remove any mentions that overlap with this one.
+          ListIterator<CoreMap> it = sentence.get(mentionsCoreAnnotationClass).listIterator();
+          while (it.hasNext()) {
+            CoreMap mention = it.next();
+
+            Optional<CoreMap> newMention = overlapsWithMention(mention, timexMentions);
+            if (newMention.isPresent()) {
+              logf("WARNING: Mention %s collides with new timex mention %s; removing.", mention, newMention.get());
+              it.remove();
+            }
+          }
+        }
+        sentence.get(mentionsCoreAnnotationClass).addAll(timexMentions);
+        allMentions.addAll(timexMentions);
+      }
+
       sentenceIndex++;
     }
 
@@ -210,7 +307,6 @@ public class EntityMentionsAnnotator implements Annotator {
 
     annotation.set(mentionsCoreAnnotationClass, allMentions);
   }
-
 
   private void addAcronyms(Annotation ann, List<CoreMap> mentions) {
     // Find all the organizations in a document

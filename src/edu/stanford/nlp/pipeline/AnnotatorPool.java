@@ -1,10 +1,13 @@
 package edu.stanford.nlp.pipeline;
+
 import java.util.*;
+import java.util.function.Supplier;
 
 import edu.stanford.nlp.util.Generics;
 import edu.stanford.nlp.util.Lazy;
 import edu.stanford.nlp.util.PropertiesUtils;
 import edu.stanford.nlp.util.logging.Redwood;
+
 
 /**
  * An object for keeping track of Annotators. Typical use is to allow multiple
@@ -20,8 +23,7 @@ import edu.stanford.nlp.util.logging.Redwood;
 public class AnnotatorPool  {
 
   /** A logger for this class */
-  private static Redwood.RedwoodChannels log = Redwood.channels(AnnotatorPool.class);
-
+  private static final Redwood.RedwoodChannels log = Redwood.channels(AnnotatorPool.class);
 
   /**
    * A cached annotator, including the signature it should cache on.
@@ -36,6 +38,9 @@ public class AnnotatorPool  {
      * The straightforward constructor.
      */
     private CachedAnnotator(String signature, Lazy<Annotator> annotator) {
+      if (!annotator.isCache()) {
+        log.warn("Cached annotator will never GC -- this can cause OOM exceptions!");
+      }
       this.signature = signature;
       this.annotator = annotator;
     }
@@ -59,15 +64,19 @@ public class AnnotatorPool  {
   }
 
 
-  /** The set of factories we know about defining how we should create new annotators of each name */
-  private final Map<String, CachedAnnotator> factories;
+
+  /**
+   * The set of annotators that we have cached, possibly with garbage collected annotator instances.
+   * This is a map from annotator name to cached annotator instances.
+   */
+  private final Map<String, CachedAnnotator> cachedAnnotators;
 
 
   /**
    * Create an empty AnnotatorPool.
    */
   public AnnotatorPool() {
-    this.factories = Generics.newHashMap();
+    this.cachedAnnotators = Generics.newHashMap();
   }
 
   /**
@@ -80,21 +89,26 @@ public class AnnotatorPool  {
    * @param name       The name to be associated with the Annotator.
    * @param props The properties we are using to create the annotator
    * @param annotator    A factory that creates an instance of the desired Annotator.
+   *                     This should be an instance of {@link Lazy#cache(Supplier)}, if we want
+   *                     the annotator pool to behave as a cache (i.e., evict old annotators
+   *                     when the GC requires it).
+   *
    * @return true if a new annotator was created; false if we reuse an existing one
    */
   public boolean register(String name, Properties props, Lazy<Annotator> annotator) {
     boolean newAnnotator = false;
-    synchronized (this.factories) {
-      CachedAnnotator oldAnnotator = this.factories.get(name);
-      String newSig = PropertiesUtils.getSignature(name, props);
+    String newSig = PropertiesUtils.getSignature(name, props);
+    synchronized (this.cachedAnnotators) {
+      CachedAnnotator oldAnnotator = this.cachedAnnotators.get(name);
       if (oldAnnotator == null || !Objects.equals(oldAnnotator.signature, newSig)) {
         // the new annotator uses different properties so we need to update!
         if (oldAnnotator != null) {
-          log.info("Replacing old annotator \"" + name + "\" with signature ["
+          // Try to get it from the global cache
+          log.debug("Replacing old annotator \"" + name + "\" with signature ["
               + oldAnnotator.signature + "] with new annotator with signature [" + newSig + "]");
         }
         // Add the new annotator
-        this.factories.put(name, new CachedAnnotator(newSig, annotator));
+        this.cachedAnnotators.put(name, new CachedAnnotator(newSig, annotator));
         // Unmount the old annotator
         Optional.ofNullable(oldAnnotator).flatMap(ann -> Optional.ofNullable(ann.annotator.getIfDefined())).ifPresent(Annotator::unmount);
         // Register that we added an annotator
@@ -110,12 +124,12 @@ public class AnnotatorPool  {
    * Clear this pool, and unmount all the annotators mounted on it.
    */
   public synchronized void clear() {
-    synchronized (this.factories) {
-      for (Map.Entry<String, CachedAnnotator> entry : new HashSet<>(this.factories.entrySet())) {
+    synchronized (this.cachedAnnotators) {
+      for (Map.Entry<String, CachedAnnotator> entry : new HashSet<>(this.cachedAnnotators.entrySet())) {
         // Unmount the annotator
         Optional.ofNullable(entry.getValue()).flatMap(ann -> Optional.ofNullable(ann.annotator.getIfDefined())).ifPresent(Annotator::unmount);
         // Remove the annotator
-        this.factories.remove(entry.getKey());
+        this.cachedAnnotators.remove(entry.getKey());
       }
     }
   }
@@ -130,12 +144,18 @@ public class AnnotatorPool  {
    * @throws IllegalArgumentException If the annotator cannot be created
    */
   public synchronized Annotator get(String name) {
-    CachedAnnotator factory =  this.factories.get(name);
+    CachedAnnotator factory =  this.cachedAnnotators.get(name);
     if (factory != null) {
       return factory.annotator.get();
     } else {
       throw new IllegalArgumentException("No annotator named " + name);
     }
   }
+
+
+  /**
+   * A global singleton annotator pool, so that we can cache globally on a JVM instance.
+   */
+  public static final AnnotatorPool SINGLETON = new AnnotatorPool();
 
 }

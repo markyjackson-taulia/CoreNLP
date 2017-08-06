@@ -99,12 +99,13 @@ import edu.stanford.nlp.util.logging.Redwood;
  *     get turned into U+00A0 (non-breaking space).  It's dangerous to turn
  *     this off for most of our Stanford NLP software, which assumes no
  *     spaces in tokens. Default is true.
- * <li>normalizeAmpersandEntity: Whether to map the XML &amp;amp; to an
+ * <li>normalizeAmpersandEntity: Whether to map the XML {@code &amp;} to an
  *      ampersand. Default is true.
  * <li>normalizeCurrency: Whether to do some awful lossy currency mappings
  *     to turn common currency characters into $, #, or "cents", reflecting
  *     the fact that nothing else appears in the old PTB3 WSJ.  (No Euro!)
- *     Default is true.
+ *     Default is false. (Note: The default was true through CoreNLP v3.8.0, but we're
+ *     gradually inching our way towards the modern world!)
  * <li>normalizeFractions: Whether to map certain common composed
  *     fraction characters to spelled out letter forms like "1/2".
  *     Default is true.
@@ -156,7 +157,8 @@ import edu.stanford.nlp.util.logging.Redwood;
  *  <li>splitHyphenated: whether or not to tokenize segments of hyphenated words
  *      separately ("school" "-" "aged", "frog" "-" "lipped"), keeping the exceptions
  *      in Supplementary Guidelines for ETTB 2.0 by Justin Mott, Colin Warner, Ann Bies,
- *      Ann Taylor. Default is false, which maintains old treebank tokenizer behavior.
+ *      Ann Taylor and CLEAR guidelines (Bracketing Biomedical Text) by Colin Warner et al. (2012).
+ *      Default is false, which maintains old treebank tokenizer behavior.
  * </ol>
  * <p>
  * A single instance of a PTBTokenizer is not thread safe, as it uses
@@ -198,7 +200,7 @@ public class PTBTokenizer<T extends HasWord> extends AbstractTokenizer<T>  {
    * Constructs a new PTBTokenizer that makes CoreLabel tokens.
    * It optionally returns carriage returns
    * as their own token. CRs come back as Words whose text is
-   * the value of {@code PTBLexer.NEWLINE_TOKEN}.
+   * the value of {@code AbstractTokenizer.NEWLINE_TOKEN}.
    *
    * @param r The Reader to read tokens from
    * @param tokenizeNLs Whether to return newlines as separate tokens
@@ -309,7 +311,7 @@ public class PTBTokenizer<T extends HasWord> extends AbstractTokenizer<T>  {
    *
    * @return string literal inserted for "\n".
    */
-  public static String getNewlineToken() { return PTBLexer.NEWLINE_TOKEN; }
+  public static String getNewlineToken() { return NEWLINE_TOKEN; }
 
   /**
    * Returns a presentable version of the given PTB-tokenized text.
@@ -409,9 +411,8 @@ public class PTBTokenizer<T extends HasWord> extends AbstractTokenizer<T>  {
   /**
    * Returns a presentable version of the given PTB-tokenized words.
    * Pass in a List of Words or a Document and this method will
-   * join the words with spaces and call {@link #ptb2Text(String)} on the
-   * output. This method will take the word() values to prevent additional
-   * text from creeping in (e.g., POS tags).
+   * take the word() values (to prevent additional text from creeping in, e.g., POS tags),
+   * and call {@link #ptb2Text(String)} on the output.
    *
    * @param ptbWords A list of HasWord objects
    * @return A presentable version of the given PTB-tokenized words
@@ -437,15 +438,24 @@ public class PTBTokenizer<T extends HasWord> extends AbstractTokenizer<T>  {
       IOUtils.closeIgnoringExceptions(writer);
 
     } else {
+      BufferedWriter out = null;
+      if (outputFileList == null) {
+        out = new BufferedWriter(new OutputStreamWriter(System.out, charset));
+      }
       for (int j = 0; j < numFiles; j++) {
         Reader r = IOUtils.readerFromString(inputFileList.get(j), charset);
-        BufferedWriter out = (outputFileList == null) ?
-          new BufferedWriter(new OutputStreamWriter(System.out, charset)) :
-            new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outputFileList.get(j)), charset));
+        if (outputFileList != null) {
+          out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outputFileList.get(j)), charset));
+        }
         numTokens += tokReader(r, out, parseInsidePattern, options, preserveLines, dump, lowerCase);
         r.close();
-        IOUtils.closeIgnoringExceptions(out);
+        if (outputFileList != null) {
+          IOUtils.closeIgnoringExceptions(out);
+        }
       } // end for j going through inputFileList
+      if (outputFileList == null) {
+        IOUtils.closeIgnoringExceptions(out);
+      }
     }
 
     final long duration = System.nanoTime() - start;
@@ -482,7 +492,7 @@ public class PTBTokenizer<T extends HasWord> extends AbstractTokenizer<T>  {
           str = obj.toShorterString();
         }
         if (preserveLines) {
-          if (PTBLexer.NEWLINE_TOKEN.equals(origStr)) {
+          if (NEWLINE_TOKEN.equals(origStr)) {
             beginLine = true;
             writer.newLine();
           } else {
@@ -678,6 +688,7 @@ public class PTBTokenizer<T extends HasWord> extends AbstractTokenizer<T>  {
     Map<String,Integer> optionArgDefs = Generics.newHashMap();
     optionArgDefs.put("options", 1);
     optionArgDefs.put("ioFileList", 0);
+    optionArgDefs.put("fileList", 0);
     optionArgDefs.put("lowerCase", 0);
     optionArgDefs.put("dump", 0);
     optionArgDefs.put("untok", 0);
@@ -714,10 +725,14 @@ public class PTBTokenizer<T extends HasWord> extends AbstractTokenizer<T>  {
    *      character data but never both.)
    * <li> -ioFileList file* The remaining command-line arguments are treated as
    *      filenames that themselves contain lists of pairs of input-output
-   *      filenames (2 column, whitespace separated).
-   * <li> -dump Print the whole of each CoreLabel, not just the value (word)
-   * <li> -untok Heuristically untokenize tokenized text
-   * <li> -h, -help Print usage info
+   *      filenames (2 column, whitespace separated). Alternatively, if there is only
+   *      one filename per line, the output filename is the input filename with ".tok" appended.
+   * <li> -fileList file* The remaining command-line arguments are treated as
+   *      filenames that contain filenames, one per line. The output of tokenization is sent to
+   *      stdout.
+   * <li> -dump Print the whole of each CoreLabel, not just the value (word).
+   * <li> -untok Heuristically untokenize tokenized text.
+   * <li> -h, -help Print usage info.
    * </ul>
    *
    * @param args Command line arguments
@@ -729,8 +744,8 @@ public class PTBTokenizer<T extends HasWord> extends AbstractTokenizer<T>  {
     showHelp = PropertiesUtils.getBool(options, "h", showHelp);
     if (showHelp) {
       log.info("Usage: java edu.stanford.nlp.process.PTBTokenizer [options]* filename*");
-      log.info("  options: -h|-help|-options tokenizerOptions|-preserveLines|-lowerCase|-dump|-ioFileList");
-      log.info("           -encoding encoding|-parseInside regex|-untok");
+      log.info("  options: -h|-help|-options tokenizerOptions|-preserveLines|-lowerCase|-dump|");
+      log.info("           -fileList|-ioFileList|-encoding encoding|-parseInside regex|-untok");
       return;
     }
 
@@ -744,6 +759,7 @@ public class PTBTokenizer<T extends HasWord> extends AbstractTokenizer<T>  {
       optionsSB.append(",tokenizeNLs");
     }
     boolean inputOutputFileList = PropertiesUtils.getBool(options, "ioFileList", false);
+    boolean fileList = PropertiesUtils.getBool(options, "fileList", false);
     boolean lowerCase = PropertiesUtils.getBool(options, "lowerCase", false);
     boolean dump = PropertiesUtils.getBool(options, "dump", false);
     boolean untok = PropertiesUtils.getBool(options, "untok", false);
@@ -765,24 +781,30 @@ public class PTBTokenizer<T extends HasWord> extends AbstractTokenizer<T>  {
 
     ArrayList<String> inputFileList = new ArrayList<>();
     ArrayList<String> outputFileList = null;
-    if (inputOutputFileList && parsedArgs != null) {
-      outputFileList = new ArrayList<>();
-      for (String fileName : parsedArgs) {
-        BufferedReader r = IOUtils.readerFromString(fileName, charset);
-        for (String inLine; (inLine = r.readLine()) != null; ) {
-          String[] fields = inLine.split("\\s+");
-          inputFileList.add(fields[0]);
-          if (fields.length > 1) {
-            outputFileList.add(fields[1]);
-          } else {
-            outputFileList.add(fields[0] + ".tok");
+    if (parsedArgs != null) {
+      if (fileList || inputOutputFileList ) {
+        outputFileList = new ArrayList<>();
+        for (String fileName : parsedArgs) {
+          BufferedReader r = IOUtils.readerFromString(fileName, charset);
+          for (String inLine; (inLine = r.readLine()) != null; ) {
+            String[] fields = inLine.split("\\s+");
+            inputFileList.add(fields[0]);
+            if (fields.length > 1) {
+              outputFileList.add(fields[1]);
+            } else {
+              outputFileList.add(fields[0] + ".tok");
+            }
           }
+          r.close();
         }
-        r.close();
+        if (fileList) {
+          // We're not actually going to use the outputFileList!
+          outputFileList = null;
+        }
+      } else {
+        // Concatenate input files into a single output file
+        inputFileList.addAll(Arrays.asList(parsedArgs));
       }
-    } else if (parsedArgs != null) {
-      // Concatenate input files into a single output file
-      inputFileList.addAll(Arrays.asList(parsedArgs));
     }
 
     if (untok) {

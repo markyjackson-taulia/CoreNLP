@@ -8,6 +8,7 @@ import edu.stanford.nlp.ling.Label;
 import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.process.CoreLabelTokenFactory;
 import edu.stanford.nlp.process.LexedTokenFactory;
+import edu.stanford.nlp.process.LexerUtils;
 import edu.stanford.nlp.util.logging.Redwood;
 
 /**
@@ -33,7 +34,7 @@ import edu.stanford.nlp.util.logging.Redwood;
    * LexedTokenFactory, and can specify the treatment of tokens by boolean
    * options given in a comma separated String
    * (e.g., "invertible,normalizeParentheses=true").
-   * If the String is <code>null</code> or empty, you get the traditional
+   * If the String is {@code null} or empty, you get the traditional
    * PTB3 normalization behaviour (i.e., you get ptb3Escaping=false).  If you
    * want no normalization, then you should pass in the String
    * "ptb3Escaping=false".  The known option names are:
@@ -240,14 +241,6 @@ import edu.stanford.nlp.util.logging.Redwood;
     return getNext(out, in);
   }
 
-  /* Soft hyphens are used to indicate line breaks in
-   * typesetting.
-   */
-  private static String removeSoftHyphens(String in) {
-    String result = in.replaceAll("\u00AD", "");
-    return result.length() == 0 ? "-" : result;
-  }
-
   private static String asciiQuotes(String in) {
     String s1 = in;
     s1 = s1.replaceAll("&apos;|[\u0091\u2018\u0092\u2019\u201A\u201B\u2039\u203A']", "'");
@@ -285,10 +278,6 @@ import edu.stanford.nlp.util.logging.Redwood;
     return s;
   }
 
-  private static String normalizeAmp(final String in) {
-    return in.replaceAll("(?i:&amp;)", "&");
-  }
-
   private Object getNext() {
     final String txt = yytext();
     return getNext(txt, txt);
@@ -303,7 +292,7 @@ import edu.stanford.nlp.util.logging.Redwood;
   }
 
   private Object getNext(String txt, String originalText, String annotation) {
-    txt = removeSoftHyphens(txt);
+    txt = LexerUtils.removeSoftHyphens(txt);
     Label w = (Label) tokenFactory.makeToken(txt, yychar, yylength());
     if (invertible || annotation != null) {
       CoreLabel word = (CoreLabel) w;
@@ -325,7 +314,7 @@ import edu.stanford.nlp.util.logging.Redwood;
   private Object getNormalizedAmpNext() {
     final String txt = yytext();
     return normalizeAmpersandEntity ?
-      getNext(normalizeAmp(txt), txt) : getNext();
+      getNext(LexerUtils.normalizeAmp(txt), txt) : getNext();
   }
 
 %}

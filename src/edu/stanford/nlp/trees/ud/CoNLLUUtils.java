@@ -71,14 +71,14 @@ public class CoNLLUUtils {
      * @param extraDepsString
      * @return A HashMap<Integer,String> with the additional dependencies.
      */
-    public static HashMap<Integer,String> parseExtraDeps(String extraDepsString) {
-        HashMap<Integer,String> extraDeps = new HashMap<>();
+    public static HashMap<String,String> parseExtraDeps(String extraDepsString) {
+        HashMap<String,String> extraDeps = new HashMap<>();
         if ( ! extraDepsString.equals("_")) {
             String[] extraDepParts = extraDepsString.split("\\|");
             for (String extraDepString : extraDepParts) {
                 int sepPos = extraDepString.indexOf(":");
                 String reln = extraDepString.substring(sepPos + 1);
-                Integer gov = Integer.parseInt(extraDepString.substring(0, sepPos));
+                String gov = extraDepString.substring(0, sepPos);
                 extraDeps.put(gov, reln);
             }
         }
@@ -92,13 +92,13 @@ public class CoNLLUUtils {
      * @param extraDeps
      * @return The extra dependencies string.
      */
-    public static String toExtraDepsString(HashMap<Integer,String> extraDeps) {
+    public static String toExtraDepsString(HashMap<String,String> extraDeps) {
         StringBuffer sb = new StringBuffer();
         boolean first = true;
         if (extraDeps != null) {
-            List<Integer> sortedKeys = new ArrayList<>(extraDeps.keySet());
+            List<String> sortedKeys = new ArrayList<>(extraDeps.keySet());
             Collections.sort(sortedKeys);
-            for (Integer key : sortedKeys) {
+            for (String key : sortedKeys) {
                 if (!first) {
                     sb.append("|");
                 } else {
@@ -110,7 +110,7 @@ public class CoNLLUUtils {
                         .append(extraDeps.get(key));
             }
         }
-    /* Empty feature list. */
+        /* Empty feature list. */
         if (first) {
             sb.append("_");
         }

@@ -61,7 +61,7 @@ import java.util.zip.GZIPOutputStream;
  * {@code ColumnDocumentReaderAndWriter} training data is 3 column input,
  * with the columns containing a word, its POS, and its gold class, but
  * this can be specified via the {@code map} property.
- * </p><p>
+ *
  * When run on a file with {@code -textFile} or {@code -textFiles},
  * the file is assumed to be plain English text (or perhaps simple HTML/XML),
  * and a reasonable attempt is made at English tokenization by
@@ -69,41 +69,36 @@ import java.util.zip.GZIPOutputStream;
  * the text can be changed with -plainTextDocumentReaderAndWriter.
  * Extra options can be supplied to the tokenizer using the
  * -tokenizerOptions flag.
- * </p><p>
+ *
  * To read from stdin, use the flag -readStdin.  The same
  * reader/writer will be used as for -textFile.
- * </p>
- * <p><b>Typical command-line usage</b></p>
- * <p>For running a trained model with a provided serialized classifier on a
- * text file: </p>
- * <p>
+ *
+ * <b>Typical command-line usage</b>
+ *
+ * For running a trained model with a provided serialized classifier on a
+ * text file:
+ *
  * {@code java -mx500m edu.stanford.nlp.ie.crf.CRFClassifier -loadClassifier
  * conll.ner.gz -textFile sampleSentences.txt }
- * </p>
- * <p>
+ *
  * When specifying all parameters in a properties file (train, test, or
  * runtime):
- * </p>
- * <p>
+ *
  * {@code java -mx1g edu.stanford.nlp.ie.crf.CRFClassifier -prop propFile }
- * </p>
- * <p>
- * To train and test a simple NER model from the command line:</p>
- * <p>
+ *
+ * To train and test a simple NER model from the command line:
+ *
  * {@code java -mx1000m edu.stanford.nlp.ie.crf.CRFClassifier
- * -trainFile trainFile -testFile testFile -macro &gt; output }
- * </p>
- * <p>
- * To train with multiple files: </p>
- * <p>
+ * -trainFile trainFile -testFile testFile -macro > output }
+ *
+ * To train with multiple files:
+ *
  * {@code java -mx1000m edu.stanford.nlp.ie.crf.CRFClassifier
- * -trainFileList file1,file2,... -testFile testFile -macro &gt; output }
- * </p>
- * <p>
+ * -trainFileList file1,file2,... -testFile testFile -macro > output }
+ *
  * To test on multiple files, use the -testFiles option and a comma
  * separated list.
- * </p>
- * <p>
+ *
  * Features are defined by a {@link edu.stanford.nlp.sequences.FeatureFactory}.
  * {@link NERFeatureFactory} is used by default, and you should look
  * there for feature templates and properties or flags that will cause
@@ -114,7 +109,9 @@ import java.util.zip.GZIPOutputStream;
  * by a Properties file (which is the recommended method) or by flags on the
  * command line. The flags are read into a {@link SeqClassifierFlags} object,
  * which the user need not be concerned with, unless wishing to add new
- * features. </p> CRFClassifier may also be used programmatically. When creating
+ * features.
+ *
+ * CRFClassifier may also be used programmatically. When creating
  * a new instance, you <i>must</i> specify a Properties object. You may then
  * call train methods to train a classifier, or load a classifier. The other way
  * to get a CRFClassifier is to deserialize one via the static
@@ -694,7 +691,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
       }
       pw.close();
     } catch (IOException ioe) {
-      ioe.printStackTrace();
+      log.warn(ioe);
     }
   }
 
@@ -1581,17 +1578,11 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
   public void train(Collection<List<IN>> objectBankWrapper, DocumentReaderAndWriter<IN> readerAndWriter) {
     Timing timer = new Timing();
 
-    Collection<List<IN>> docs = new ArrayList<>();
-    for (List<IN> doc : objectBankWrapper) {
-      docs.add(doc);
-    }
+    Collection<List<IN>> docs = new ArrayList<>(objectBankWrapper);
 
     if (flags.numOfSlices > 0) {
       log.info("Taking " + flags.numOfSlices + " out of " + flags.totalDataSlice + " slices of data for training");
-      List<List<IN>> docsToShuffle = new ArrayList<>();
-      for (List<IN> doc : docs) {
-        docsToShuffle.add(doc);
-      }
+      List<List<IN>> docsToShuffle = new ArrayList<>(docs);
       Collections.shuffle(docsToShuffle, random);
       int cutOff = (int)(docsToShuffle.size() / (flags.totalDataSlice + 0.0) * flags.numOfSlices);
       docs = docsToShuffle.subList(0, cutOff);
@@ -1645,14 +1636,12 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
           CRFClassifierEvaluator<IN> crfEvaluator = new CRFClassifierEvaluator<>("Test set (" + flags.testFile + ")",
                   this);
           ObjectBank<List<IN>> testObjBank = makeObjectBankFromFile(flags.testFile, readerAndWriter);
-          List<List<IN>> testDocs = new ArrayList<>();
-          for (List<IN> doc : testObjBank) {
-            testDocs.add(doc);
-          }
+          List<List<IN>> testDocs = new ArrayList<>(testObjBank);
           List<Triple<int[][][], int[], double[][][]>> testDataAndLabels = documentsToDataAndLabelsList(testDocs);
           crfEvaluator.setTestData(testDocs, testDataAndLabels);
-          if (flags.evalCmd.length() > 0)
+          if ( ! flags.evalCmd.isEmpty()) {
             crfEvaluator.setEvalCmd(flags.evalCmd);
+          }
           evaluatorList.add(crfEvaluator);
         }
         if (flags.testFiles != null) {
@@ -2336,8 +2325,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
       loadTextClassifier(br);
       br.close();
     } catch (Exception ex) {
-      log.info("Exception in loading text classifier from " + text);
-      ex.printStackTrace();
+      log.info("Exception in loading text classifier from " + text, ex);
     }
   }
 
@@ -2405,52 +2393,43 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
    * should now work for Chinese segmenter though. TODO: check things in
    * serializeClassifier and add other necessary serialization back.
    *
-   * @param serializePath
-   *          File to write text format of classifier to.
+   * @param serializePath File to write text format of classifier to.
    */
   public void serializeTextClassifier(String serializePath) {
-    log.info("Serializing Text classifier to " + serializePath + "...");
     try {
       PrintWriter pw = new PrintWriter(new GZIPOutputStream(new FileOutputStream(serializePath)));
       serializeTextClassifier(pw);
 
       pw.close();
-      log.info("done.");
-
+      log.info("Serializing Text classifier to " + serializePath + "... done.");
     } catch (Exception e) {
-      log.info("Failed");
-      e.printStackTrace();
+      log.info("Serializing Text classifier to " + serializePath + "... FAILED.", e);
     }
   }
 
   public void serializeClassIndex(String serializePath) {
-    log.info("Serializing class index to " + serializePath + "...");
 
     ObjectOutputStream oos = null;
     try {
       oos = IOUtils.writeStreamFromString(serializePath);
       oos.writeObject(classIndex);
-      log.info("done.");
+      log.info("Serializing class index to " + serializePath + "... done.");
     } catch (Exception e) {
-      log.info("Failed");
-      e.printStackTrace();
+      log.info("Serializing class index to " + serializePath + "... FAILED.", e);
     } finally {
       IOUtils.closeIgnoringExceptions(oos);
     }
   }
 
   public static Index<String> loadClassIndexFromFile(String serializePath) {
-    log.info("Reading class index from " + serializePath + "...");
-
     ObjectInputStream ois = null;
     Index<String> c = null;
     try {
       ois = IOUtils.readStreamFromString(serializePath);
       c = (Index<String>) ois.readObject();
-      log.info("done.");
+      log.info("Reading class index from " + serializePath + "... done.");
     } catch (Exception e) {
-      log.info("Failed");
-      e.printStackTrace();
+      log.info("Reading class index from " + serializePath + "... FAILED.", e);
     } finally {
       IOUtils.closeIgnoringExceptions(ois);
     }
@@ -2459,33 +2438,28 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
   }
 
   public void serializeWeights(String serializePath) {
-    log.info("Serializing weights to " + serializePath + "...");
-
     ObjectOutputStream oos = null;
     try {
       oos = IOUtils.writeStreamFromString(serializePath);
       oos.writeObject(weights);
-      log.info("done.");
+      log.info("Serializing weights to " + serializePath + "... done.");
     } catch (Exception e) {
-      log.info("Failed");
-      e.printStackTrace();
+      log.info("Serializing weights to " + serializePath + "... FAILED.", e);
     } finally {
       IOUtils.closeIgnoringExceptions(oos);
     }
   }
 
   public static double[][] loadWeightsFromFile(String serializePath) {
-    log.info("Reading weights from " + serializePath + "...");
 
     ObjectInputStream ois = null;
     double[][] w = null;
     try {
       ois = IOUtils.readStreamFromString(serializePath);
       w = (double[][]) ois.readObject();
-      log.info("done.");
+      log.info("Reading weights from " + serializePath + "... done.");
     } catch (Exception e) {
-      log.info("Failed");
-      e.printStackTrace();
+      log.info("Reading weights from " + serializePath + "... FAILED.", e);
     } finally {
       IOUtils.closeIgnoringExceptions(ois);
     }
@@ -2494,33 +2468,28 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
   }
 
   public void serializeFeatureIndex(String serializePath) {
-    log.info("Serializing FeatureIndex to " + serializePath + "...");
-
     ObjectOutputStream oos = null;
     try {
       oos = IOUtils.writeStreamFromString(serializePath);
       oos.writeObject(featureIndex);
-      log.info("done.");
+      log.info("Serializing FeatureIndex to " + serializePath + "... done.");
     } catch (Exception e) {
       log.info("Failed");
-      e.printStackTrace();
+      log.info("Serializing FeatureIndex to " + serializePath + "... FAILED.", e);
     } finally {
       IOUtils.closeIgnoringExceptions(oos);
     }
   }
 
   public static Index<String> loadFeatureIndexFromFile(String serializePath) {
-    log.info("Reading FeatureIndex from " + serializePath + "...");
-
     ObjectInputStream ois = null;
     Index<String> f = null;
     try {
       ois = IOUtils.readStreamFromString(serializePath);
       f = (Index<String>) ois.readObject();
-      log.info("done.");
+      log.info("Reading FeatureIndex from " + serializePath + "... done.");
     } catch (Exception e) {
-      log.info("Failed");
-      e.printStackTrace();
+      log.info("Reading FeatureIndex from " + serializePath + "... FAILED.", e);
     } finally {
       IOUtils.closeIgnoringExceptions(ois);
     }
@@ -2534,16 +2503,14 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
    */
   @Override
   public void serializeClassifier(String serializePath) {
-    log.info("Serializing classifier to " + serializePath + "...");
-
     ObjectOutputStream oos = null;
     try {
       oos = IOUtils.writeStreamFromString(serializePath);
       serializeClassifier(oos);
-      log.info("done.");
+      log.info("Serializing classifier to " + serializePath + "... done.");
 
     } catch (Exception e) {
-      throw new RuntimeIOException("Failed to save classifier", e);
+      throw new RuntimeIOException("Serializing classifier to " + serializePath + "... FAILED", e);
     } finally {
       IOUtils.closeIgnoringExceptions(oos);
     }

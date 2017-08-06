@@ -427,7 +427,7 @@ public class CoreAnnotations {
 
   /**
    * Annotation for the whitespace characters appearing before this word. This
-   * can be filled in by the tokenizer so that the original text string can be
+   * can be filled in by an invertible tokenizer so that the original text string can be
    * reconstructed.
    */
   public static class BeforeAnnotation implements CoreAnnotation<String> {
@@ -439,8 +439,12 @@ public class CoreAnnotations {
 
   /**
    * Annotation for the whitespace characters appear after this word. This can
-   * be filled in by the tokenizer so that the original text string can be
+   * be filled in by an invertible tokenizer so that the original text string can be
    * reconstructed.
+   *
+   * Note: When running a tokenizer token-by-token, in general this field will only
+   * be filled in after the next token is read, so you need to be reading this field
+   * one behind. Be careful about this.
    */
   public static class AfterAnnotation implements CoreAnnotation<String> {
     @Override
@@ -513,9 +517,9 @@ public class CoreAnnotations {
   /**
    * CoNLL-U dep parsing - List of secondary dependencies
    */
-  public static class CoNLLUSecondaryDepsAnnotation implements CoreAnnotation<HashMap<Integer,String>> {
+  public static class CoNLLUSecondaryDepsAnnotation implements CoreAnnotation<HashMap<String,String>> {
     @Override
-    public Class<HashMap<Integer,String>> getType() {
+    public Class<HashMap<String,String>> getType() {
       return ErasureUtils.uncheckedCast(Pair.class);
     }
   }
@@ -714,6 +718,16 @@ public class CoreAnnotations {
    * The standard key for the answer which is a String
    */
   public static class AnswerAnnotation implements CoreAnnotation<String> {
+    @Override
+    public Class<String> getType() {
+      return String.class;
+    }
+  }
+
+  /**
+   * The standard key for the answer which is a String
+   */
+  public static class PresetAnswerAnnotation implements CoreAnnotation<String> {
     @Override
     public Class<String> getType() {
       return String.class;
@@ -1164,6 +1178,64 @@ public class CoreAnnotations {
     @Override
     public Class<String> getType() {
       return String.class;
+    }
+  }
+
+  /**
+   * Store a list of sections in the document
+   */
+  public static class SectionsAnnotation implements CoreAnnotation<List<CoreMap>> {
+    @Override
+    public Class<List<CoreMap>> getType() { return ErasureUtils.uncheckedCast(List.class); }
+  }
+
+  /**
+   * Store an index into a list of sections
+   */
+  public static class SectionIndexAnnotation implements CoreAnnotation<Integer> {
+    @Override
+    public Class<Integer> getType() { return ErasureUtils.uncheckedCast(Integer.class); }
+  }
+
+  /**
+   * Store the beginning of the author mention for this section
+   */
+  public static class SectionAuthorCharacterOffsetBeginAnnotation implements CoreAnnotation<Integer> {
+    @Override
+    public Class<Integer> getType() { return ErasureUtils.uncheckedCast(Integer.class); }
+  }
+
+  /**
+   * Store the end of the author mention for this section
+   */
+  public static class SectionAuthorCharacterOffsetEndAnnotation implements CoreAnnotation<Integer> {
+    @Override
+    public Class<Integer> getType() { return ErasureUtils.uncheckedCast(Integer.class); }
+  }
+
+  /**
+   * Store the xml tag for the section as a CoreLabel
+   */
+  public static class SectionTagAnnotation implements CoreAnnotation<CoreLabel> {
+    @Override
+    public Class<CoreLabel> getType() { return ErasureUtils.uncheckedCast(CoreLabel.class); }
+  }
+
+  /**
+   * Store a list of CoreMaps representing quotes
+   */
+  public static class QuotesAnnotation implements CoreAnnotation<List<CoreMap>> {
+    @Override
+    public Class<List<CoreMap>> getType() { return ErasureUtils.uncheckedCast(List.class); }
+  }
+
+  /**
+   * Indicate whether a sentence is quoted
+   */
+  public static class QuotedAnnotation implements CoreAnnotation<Boolean> {
+    @Override
+    public Class<Boolean> getType() {
+      return Boolean.class;
     }
   }
 
@@ -1953,4 +2025,19 @@ public class CoreAnnotations {
     @Override
     public Class<String> getType() { return ErasureUtils.uncheckedCast(String.class); }
   }
+
+
+  /**
+   * The CoreMap key identifying the annotation's text, as formatted by the
+   * {@link edu.stanford.nlp.naturalli.QuestionToStatementTranslator}.
+   *
+   * This is attached to {@link CoreLabel}s.
+   */
+  public static class StatementTextAnnotation implements CoreAnnotation<String> {
+    @Override
+    public Class<String> getType() {
+      return String.class;
+    }
+  }
+
 }
