@@ -21,6 +21,7 @@ import edu.stanford.nlp.parser.common.ParserAnnotations;
 import edu.stanford.nlp.parser.common.ParserConstraint;
 import edu.stanford.nlp.pipeline.Annotation;
 import edu.stanford.nlp.pipeline.Annotator;
+import edu.stanford.nlp.pipeline.ParserAnnotator;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import edu.stanford.nlp.semgraph.SemanticGraph;
 import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations;
@@ -609,8 +610,8 @@ public abstract class CorefMentionFinder  {
     // this shouldn't happen
     //    throw new RuntimeException("RuleBasedCorefMentionFinder: ERROR: Failed to find head token");
     Redwood.log("RuleBasedCorefMentionFinder: Failed to find head token:\n" +
-                       "Tree is: " + root + "\n" +
-                       "token = |" + token + "|" + index + "|, approx=" + approximateness);
+        "Tree is: " + root + "\n" +
+        "token = |" + token + "|" + index + "|, approx=" + approximateness);
     for (Tree leaf : leaves) {
       if (token.equals(leaf.value())) {
         // log.info("Found it at position " + ind + "; returning " + leaf);
@@ -651,6 +652,10 @@ public abstract class CorefMentionFinder  {
   private Annotator getParser() {
     if(parserProcessor == null){
       parserProcessor = StanfordCoreNLP.getExistingAnnotator("parse");
+      if (parserProcessor == null) {
+        Properties emptyProperties = new Properties();
+        parserProcessor = new ParserAnnotator("coref.parse.md", emptyProperties);
+      }
       assert(parserProcessor != null);
     }
     return parserProcessor;
