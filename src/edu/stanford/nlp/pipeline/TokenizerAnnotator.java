@@ -321,6 +321,14 @@ public class TokenizerAnnotator implements Annotator  {
       // token.set(CoreAnnotations.TextAnnotation.class, token.get(CoreAnnotations.TextAnnotation.class));
       // }
 
+      // label newlines
+      for (CoreLabel token : tokens) {
+        if (token.word().equals(AbstractTokenizer.NEWLINE_TOKEN) && (token.endPosition() - token.beginPosition() == 1))
+          token.set(CoreAnnotations.IsNewlineAnnotation.class, true);
+        else
+          token.set(CoreAnnotations.IsNewlineAnnotation.class, false);
+      }
+
       annotation.set(CoreAnnotations.TokensAnnotation.class, tokens);
       if (VERBOSE) {
         log.info("done.");
@@ -350,7 +358,8 @@ public class TokenizerAnnotator implements Annotator  {
         CoreAnnotations.PositionAnnotation.class,
         CoreAnnotations.IndexAnnotation.class,
         CoreAnnotations.OriginalTextAnnotation.class,
-        CoreAnnotations.ValueAnnotation.class
+        CoreAnnotations.ValueAnnotation.class,
+        CoreAnnotations.IsNewlineAnnotation.class
     ));
   }
 

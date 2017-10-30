@@ -49,6 +49,7 @@ message Document {
    * This field is for entity mentions across the document.
    */
   repeated NERMention mentions = 9;
+  optional bool hasEntityMentionsAnnotation = 13; // used to differentiate between null and empty list
 
   /**
    * xml information
@@ -109,6 +110,8 @@ message Sentence {
   optional string          docID                               = 63;  // doc id
   optional bool            sectionQuoted                       = 64;  // is this sentence in an xml quote in a post
 
+  optional bool            hasEntityMentionsAnnotation         = 65;  // check if there are entity mentions
+
   extensions 100 to 255;
 }
 
@@ -153,6 +156,7 @@ message Token {
   optional string conllUMisc        = 35;
   optional MapStringString conllUSecondaryDeps = 36;
   optional string   wikipediaEntity = 37;
+  optional bool     isNewline = 38;
 
 
   // Fields set by other annotators in CoreNLP
@@ -451,6 +455,7 @@ message NERMention {
   optional string entityType                    = 6;
   optional Timex  timex                         = 7;
   optional string wikipediaEntity               = 8;
+  optional string gender                        = 9;
 }
 
 //

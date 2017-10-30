@@ -888,9 +888,14 @@ public class CoreAnnotations {
   }
 
   /**
-   * The CoreMap key identifying the offset of the first character of an
-   * annotation. The character with index 0 is the first character in the
+   * The CoreMap key identifying the offset of the first char of an
+   * annotation. The char with index 0 is the first char in the
    * document.
+   *
+   * Note that these are currently measured in terms of UTF-16 char offsets, not codepoints,
+   * so that when non-BMP Unicode characters are present, such a character will add 2 to
+   * the position. On the other hand, these values will work with String#substring() and
+   * you can then calculate the number of codepoints in a substring.
    *
    * This key should be set for any annotation that represents a span of text.
    */
@@ -905,6 +910,11 @@ public class CoreAnnotations {
    * The CoreMap key identifying the offset of the last character after the end
    * of an annotation. The character with index 0 is the first character in the
    * document.
+   *
+   * Note that these are currently measured in terms of UTF-16 char offsets, not codepoints,
+   * so that when non-BMP Unicode characters are present, such a character will add 2 to
+   * the position. On the other hand, these values will work with String#substring() and
+   * you can then calculate the number of codepoints in a substring.
    *
    * This key should be set for any annotation that represents a span of text.
    */
@@ -2039,5 +2049,29 @@ public class CoreAnnotations {
       return String.class;
     }
   }
+
+  /**
+   * The CoreMap key identifying an entity mention's potential gender.
+   *
+   * This is attached to {@link CoreMap}s.
+   */
+  public static class GenderAnnotation implements CoreAnnotation<String> {
+    @Override
+    public Class<String> getType() {
+      return String.class;
+    }
+  }
+
+  /**
+   * The CoreLabel key identifying whether a token is a newline or not
+   *
+   * This is attached to {@link CoreLabel}s.
+   */
+  public static class IsNewlineAnnotation implements CoreAnnotation<Boolean> {
+    @Override
+    public Class<Boolean> getType() {return Boolean.class;}
+  }
+
+
 
 }

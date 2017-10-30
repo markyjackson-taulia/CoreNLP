@@ -21,7 +21,7 @@ import java.util.*;
  * of code you could just add the implements directly, but I recommend
  * wrapping instead because I believe that it will help to keep the
  * pipeline code more manageable.
- * <br>
+ *
  * An Annotator should also provide a description of what it produces and
  * a description of what it requires to have been produced by using Sets
  * of requirements.
@@ -141,7 +141,7 @@ public interface Annotator {
     put(STANFORD_NATLOG,                   new LinkedHashSet<>(Arrays.asList(STANFORD_TOKENIZE, STANFORD_SSPLIT, STANFORD_POS, STANFORD_LEMMA, STANFORD_DEPENDENCIES)));
     put(STANFORD_OPENIE,                   new LinkedHashSet<>(Arrays.asList(STANFORD_TOKENIZE, STANFORD_SSPLIT, STANFORD_POS, STANFORD_LEMMA, STANFORD_DEPENDENCIES, STANFORD_NATLOG)));
     put(STANFORD_QUOTE,                    new LinkedHashSet<>(Arrays.asList(STANFORD_TOKENIZE, STANFORD_SSPLIT)));
-    put(STANFORD_QUOTE_ATTRIBUTION,        new LinkedHashSet<>(Arrays.asList(STANFORD_TOKENIZE, STANFORD_SSPLIT, STANFORD_POS, STANFORD_LEMMA, STANFORD_NER, STANFORD_DEPENDENCIES, STANFORD_QUOTE)));
+    put(STANFORD_QUOTE_ATTRIBUTION,        new LinkedHashSet<>(Arrays.asList(STANFORD_TOKENIZE, STANFORD_SSPLIT, STANFORD_POS, STANFORD_LEMMA, STANFORD_NER, STANFORD_MENTION, STANFORD_DEPENDENCIES, STANFORD_QUOTE)));
     put(STANFORD_UD_FEATURES,              new LinkedHashSet<>(Arrays.asList(STANFORD_TOKENIZE, STANFORD_SSPLIT, STANFORD_POS, STANFORD_DEPENDENCIES)));
     put(STANFORD_LINK,                     new LinkedHashSet<>(Arrays.asList(STANFORD_TOKENIZE, STANFORD_SSPLIT, STANFORD_POS, STANFORD_DEPENDENCIES, STANFORD_LEMMA, STANFORD_NER, STANFORD_ENTITY_MENTIONS)));
     put(STANFORD_KBP,                      new LinkedHashSet<>(Arrays.asList(STANFORD_TOKENIZE, STANFORD_SSPLIT, STANFORD_POS, STANFORD_DEPENDENCIES, STANFORD_LEMMA, STANFORD_NER, STANFORD_MENTION, STANFORD_COREF, STANFORD_REGEXNER)));

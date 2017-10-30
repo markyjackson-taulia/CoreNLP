@@ -127,8 +127,8 @@ public class ProtobufAnnotationSerializerSlowITest {
       for (int i = 0; i < doc.get(CoreAnnotations.TokensAnnotation.class).size(); i++) {
         CoreLabel token = doc.get(CoreAnnotations.TokensAnnotation.class).get(i);
         // Remove null gender
-        if (token.get(MachineReadingAnnotations.GenderAnnotation.class) == null) {
-          token.remove(MachineReadingAnnotations.GenderAnnotation.class);
+        if (token.get(CoreAnnotations.GenderAnnotation.class) == null) {
+          token.remove(CoreAnnotations.GenderAnnotation.class);
         }
       }
     }
@@ -226,6 +226,15 @@ public class ProtobufAnnotationSerializerSlowITest {
 
   private void testAnnotators(String annotators, Pair<String,String> additionalProperty) {
     try {
+      // check if this list of annotators is valid
+      // if annotators need to be added by ensurePrerequisiteAnnotators, just return
+      String[] annotatorsAsArray = annotators.split(",");
+      Properties emptyProps = new Properties();
+      String completeAnnotatorsList =
+          StanfordCoreNLP.ensurePrerequisiteAnnotators(annotatorsAsArray, emptyProps);
+      if (completeAnnotatorsList.split(",").length != annotatorsAsArray.length) {
+        return;
+      }
       AnnotationSerializer serializer = new ProtobufAnnotationSerializer();
       // Write
       Annotation doc = new StanfordCoreNLP(new Properties(){{
@@ -431,7 +440,7 @@ public class ProtobufAnnotationSerializerSlowITest {
 
   @Test
   public void testGender() {
-    testAnnotators("tokenize,ssplit,pos,lemma,ner,gender");
+    testAnnotators("tokenize,ssplit,pos,lemma,ner,entitymentions,gender");
   }
 
 
